@@ -45,69 +45,55 @@ RISK_FACTOR = float(os.environ.get("RISK_FACTOR"))
 
 # Helper Functions
 def ParseSignal(signal: str) -> dict:
-    """Starts process of parsing signal and entering trade on MetaTrader account.
+    """Starts the process of parsing signal and entering a trade on a MetaTrader account.
 
     Arguments:
-        signal: trading signal
+        signal: Trading signal in the new specified format
 
     Returns:
-        a dictionary that contains trade signal information
+        A dictionary that contains trade signal information
     """
 
-    # converts message to list of strings for parsing
+    # Split the signal by line breaks
     signal = signal.splitlines()
-    signal = [line.rstrip() for line in signal]
+    signal = [line.strip() for line in signal]
 
     trade = {}
 
-    # determines the order type of the trade
-    if('Buy Limit'.lower() in signal[0].lower()):
-        trade['OrderType'] = 'Buy Limit'
+    # First line should contain symbol and order type (Buy/Sell/Buy Limit/Sell Limit/Buy Stop/Sell Stop)
+    first_line = signal[0].split()
+    trade['Symbol'] = first_line[0].upper()
+    trade['OrderType'] = first_line[1].lower()
 
-    elif('Sell Limit'.lower() in signal[0].lower()):
-        trade['OrderType'] = 'Sell Limit'
-
-    elif('Buy Stop'.lower() in signal[0].lower()):
-        trade['OrderType'] = 'Buy Stop'
-
-    elif('Sell Stop'.lower() in signal[0].lower()):
-        trade['OrderType'] = 'Sell Stop'
-
-    elif('Buy'.lower() in signal[0].lower()):
-        trade['OrderType'] = 'Buy'
-    
-    elif('Sell'.lower() in signal[0].lower()):
-        trade['OrderType'] = 'Sell'
-    
-    # returns an empty dictionary if an invalid order type was given
-    else:
+    # Check if the symbol is valid, if not, return an empty dictionary
+    if trade['Symbol'] not in SYMBOLS:
         return {}
 
-    # extracts symbol from trade signal
-    trade['Symbol'] = (signal[0].split())[-1].upper()
-    
-    # checks if the symbol is valid, if not, returns an empty dictionary
-    if(trade['Symbol'] not in SYMBOLS):
-        return {}
-    
-    # checks wheter or not to convert entry to float because of market exectution option ("NOW")
-    if(trade['OrderType'] == 'Buy' or trade['OrderType'] == 'Sell'):
-        trade['Entry'] = (signal[1].split())[-1]
-    
+    # For market execution (NOW), set Entry to 'NOW'
+    if 'entry' in signal[1].lower():
+        trade['Entry'] = 'NOW'
     else:
-        trade['Entry'] = float((signal[1].split())[-1])
-    
-    trade['StopLoss'] = float((signal[2].split())[-1])
-    trade['TP'] = [float((signal[3].split())[-1])]
+        # Parse the entry price
+        entry_line = signal[1].split()
+        trade['Entry'] = float(entry_line[1])
 
-    # checks if there's a fourth line and parses it for TP2
-    if(len(signal) > 4):
-        trade['TP'].append(float(signal[4].split()[-1]))
-    
-    # adds risk factor to trade
+    # Parse stop loss (SL)
+    sl_line = signal[2].split()
+    trade['StopLoss'] = float(sl_line[1])
+
+    # Parse take profit (TP) levels
+    trade['TP'] = []
+
+    for i in range(3, len(signal)):
+        if 'tp' in signal[i].lower():
+            tp_line = signal[i].split()
+            trade['TP'].append(float(tp_line[1]))
+
+    # Adds risk factor to trade
     trade['RiskFactor'] = RISK_FACTOR
 
     return trade
+
 
 def GetTradeInformation(update: Update, trade: dict, balance: float) -> None:
     """Calculates information from given trade including stop loss and take profit in pips, posiition size, and potential loss/profit.
