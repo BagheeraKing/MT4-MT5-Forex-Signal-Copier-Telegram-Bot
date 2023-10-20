@@ -45,65 +45,69 @@ RISK_FACTOR = float(os.environ.get("RISK_FACTOR"))
 
 # Helper Functions
 def ParseSignal(signal: str) -> dict:
-    """Starts the process of parsing signal and entering a trade on a MetaTrader account.
+    """Starts process of parsing signal and entering trade on MetaTrader account.
 
     Arguments:
-        signal: Trading signal in the specified format
+        signal: trading signal
 
     Returns:
-        A dictionary that contains trade signal information
+        a dictionary that contains trade signal information
     """
-    
+
+    # converts message to list of strings for parsing
+    signal = signal.splitlines()
+    signal = [line.rstrip() for line in signal]
+
     trade = {}
+
+    # determines the order type of the trade
+    if('Buy Limit'.lower() in signal[0].lower()):
+        trade['OrderType'] = 'Buy Limit'
+
+    elif('Sell Limit'.lower() in signal[0].lower()):
+        trade['OrderType'] = 'Sell Limit'
+
+    elif('Buy Stop'.lower() in signal[0].lower()):
+        trade['OrderType'] = 'Buy Stop'
+
+    elif('Sell Stop'.lower() in signal[0].lower()):
+        trade['OrderType'] = 'Sell Stop'
+
+    elif('Buy'.lower() in signal[0].lower()):
+        trade['OrderType'] = 'Buy'
     
-    try:
-        # Split the signal by line breaks
-        signal = signal.splitlines()
-        signal = [line.strip() for line in signal]
+    elif('Sell'.lower() in signal[0].lower()):
+        trade['OrderType'] = 'Sell'
+    
+    # returns an empty dictionary if an invalid order type was given
+    else:
+        return {}
 
-        print("Debug: Split signal lines")
+    # extracts symbol from trade signal
+    trade['Symbol'] = (signal[0].split())[-1].upper()
+    
+    # checks if the symbol is valid, if not, returns an empty dictionary
+    if(trade['Symbol'] not in SYMBOLS):
+        return {}
+    
+    # checks wheter or not to convert entry to float because of market exectution option ("NOW")
+    if(trade['OrderType'] == 'Buy' or trade['OrderType'] == 'Sell'):
+        trade['Entry'] = (signal[1].split())[-1]
+    
+    else:
+        trade['Entry'] = float((signal[1].split())[-1])
+    
+    trade['StopLoss'] = float((signal[2].split())[-1])
+    trade['TP'] = [float((signal[3].split())[-1])]
 
-        # First line should contain symbol and order type (Buy/Sell/Limit/Stop)
-        first_line = signal[0].split()
-        trade['Symbol'] = first_line[0].upper()
-        trade['OrderType'] = first_line[1].lower()
-
-        print(f"Debug: Symbol: {trade['Symbol']}, OrderType: {trade['OrderType']}")
-
-        # Check if the symbol is valid, if not, return an empty dictionary
-        if trade['Symbol'] not in SYMBOLS:
-            raise Exception('Invalid Symbol')
-
-        # For market execution (Now), set Entry to 'NOW'
-        if 'entry' in signal[1].lower():
-            trade['Entry'] = 'NOW'
-        else:
-            # Parse the entry price
-            entry_line = signal[1].split()
-            trade['Entry'] = float(entry_line[1])
-
-        # Parse stop loss (SL)
-        sl_line = signal[2].split()
-        trade['StopLoss'] = float(sl_line[1])
-
-        # Parse take profit (TP) levels
-        trade['TP'] = []
-
-        for i in range(3, len(signal)):
-            if 'tp' in signal[i].lower():
-                tp_line = signal[i].split()
-                trade['TP'].append(float(tp_line[1]))
-
-        # Adds risk factor to trade
-        trade['RiskFactor'] = RISK_FACTOR
-
-    except Exception as error:
-        print(f"Error: {str(error)}")
-        return {'error': str(error)}  # Return an error message
+    # checks if there's a fourth line and parses it for TP2
+    if(len(signal) > 4):
+        trade['TP'].append(float(signal[4].split()[-1]))
+    
+    # adds risk factor to trade
+    trade['RiskFactor'] = RISK_FACTOR
 
     return trade
-
-
 
 def GetTradeInformation(update: Update, trade: dict, balance: float) -> None:
     """Calculates information from given trade including stop loss and take profit in pips, posiition size, and potential loss/profit.
@@ -146,47 +150,53 @@ def GetTradeInformation(update: Update, trade: dict, balance: float) -> None:
 
     return
 
-from prettytable import PrettyTable
-
-def CreateTable(trade: dict, balance: float, stopLossPips: int, takeProfitPips: list) -> str:
-    """Creates a table with trade information in the specified format.
+def CreateTable(trade: dict, balance: float, stopLossPips: int, takeProfitPips: int) -> PrettyTable:
+    """Creates PrettyTable object to display trade information to user.
 
     Arguments:
-        trade: A dictionary that stores trade information.
-        balance: Current balance of the MetaTrader account.
-        stopLossPips: The difference in pips from stop loss price to entry price.
-        takeProfitPips: A list of take profit levels in pips.
+        trade: dictionary that stores trade information
+        balance: current balance of the MetaTrader account
+        stopLossPips: the difference in pips from stop loss price to entry price
 
     Returns:
-        A string representing the table with trade information.
+        a Pretty Table object that contains trade information
     """
+
+    # creates prettytable object
     table = PrettyTable()
-    table.title = "Example Trade"
+    
+    table.title = "Trade Information"
     table.field_names = ["Key", "Value"]
-    table.align["Key"] = "l"
-    table.align["Value"] = "l"
+    table.align["Key"] = "l"  
+    table.align["Value"] = "l" 
 
-    table.add_row(["Symbol", trade["Symbol"]])
-    table.add_row(["Buy/Sell/buy limit/sell limit/buy stop/sell stop", trade["OrderType"]])
-    table.add_row(["Entry / if : (Now) open trade at market execution", trade["Entry"]])
-    table.add_row(["SL", f"{trade['StopLoss']} (-{stopLossPips} pips)"])
+    table.add_row([trade["OrderType"] , trade["Symbol"]])
+    table.add_row(['Entry\n', trade['Entry']])
 
-    for i, takeProfit in enumerate(trade['TP']):
-        table.add_row([f"TP{i + 1}", f"{takeProfit} (+{takeProfitPips[i]} pips)"])
+    table.add_row(['Stop Loss', '{} pips'.format(stopLossPips)])
 
-    table.add_row(["Ignore this (+n) pips", ""])
-    table.add_row(["", ""])
+    for count, takeProfit in enumerate(takeProfitPips):
+        table.add_row([f'TP {count + 1}', f'{takeProfit} pips'])
 
-    table.add_row(["Risk Factor", f"{trade['RiskFactor'] * 100:.2f}%"])
-    table.add_row(["Position Size", trade['PositionSize']])
-    table.add_row(["", ""])
-    table.add_row(["Current Balance", f"$ {balance:,.2f}"])
-    table.add_row(["Potential Loss", f"$ {round((trade['PositionSize'] * 10) * stopLossPips, 2):,.2f}"])
+    table.add_row(['\nRisk Factor', '\n{:,.0f} %'.format(trade['RiskFactor'] * 100)])
+    table.add_row(['Position Size', trade['PositionSize']])
+    
+    table.add_row(['\nCurrent Balance', '\n$ {:,.2f}'.format(balance)])
+    table.add_row(['Potential Loss', '$ {:,.2f}'.format(round((trade['PositionSize'] * 10) * stopLossPips, 2))])
 
-    totalProfit = sum([(trade['PositionSize'] * 10 * (1 / len(trade['TP'])) * takeProfit) for takeProfit in takeProfitPips])
-    table.add_row(["Total Profit", f"$ {totalProfit:,.2f}"])
+    # total potential profit from trade
+    totalProfit = 0
 
-    return table.get_string()
+    for count, takeProfit in enumerate(takeProfitPips):
+        profit = round((trade['PositionSize'] * 10 * (1 / len(takeProfitPips))) * takeProfit, 2)
+        table.add_row([f'TP {count + 1} Profit', '$ {:,.2f}'.format(profit)])
+        
+        # sums potential profit from each take profit target
+        totalProfit += profit
+
+    table.add_row(['\nTotal Profit', '\n$ {:,.2f}'.format(totalProfit)])
+
+    return table
 
 async def ConnectMetaTrader(update: Update, trade: dict, enterTrade: bool):
     """Attempts connection to MetaAPI and MetaTrader to place trade.
@@ -420,8 +430,8 @@ def help(update: Update, context: CallbackContext) -> None:
     help_message = "This bot is used to automatically enter trades onto your MetaTrader account directly from Telegram. To begin, ensure that you are authorized to use this bot by adjusting your Python script or environment variables.\n\nThis bot supports all trade order types (Market Execution, Limit, and Stop)\n\nAfter an extended period away from the bot, please be sure to re-enter the start command to restart the connection to your MetaTrader account."
     commands = "List of commands:\n/start : displays welcome message\n/help : displays list of commands and example trades\n/trade : takes in user inputted trade for parsing and placement\n/calculate : calculates trade information for a user inputted trade"
     trade_example = "Example Trades 💴:\n\n"
-    market_execution_example = "GBPUSD BUY\nEntry NOW\nSL 1.14336\nTP 1.28930\nTP 1.29845\n\n"
-    limit_example = "GBPUSD BUY LIMIT\nEntry 1.14480\nSL 1.14336\nTP 1.28930\nTP 1.29845\n\n"
+    market_execution_example = "Market Execution:\nBUY GBPUSD\nEntry NOW\nSL 1.14336\nTP 1.28930\nTP 1.29845\n\n"
+    limit_example = "Limit Execution:\nBUY LIMIT GBPUSD\nEntry 1.14480\nSL 1.14336\nTP 1.28930\n\n"
     note = "You are able to enter up to two take profits. If two are entered, both trades will use half of the position size, and one will use TP1 while the other uses TP2.\n\nNote: Use 'NOW' as the entry to enter a market execution trade."
 
     # sends messages to user
