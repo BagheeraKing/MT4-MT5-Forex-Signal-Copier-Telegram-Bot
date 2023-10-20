@@ -48,51 +48,61 @@ def ParseSignal(signal: str) -> dict:
     """Starts the process of parsing signal and entering a trade on a MetaTrader account.
 
     Arguments:
-        signal: Trading signal in the new specified format
+        signal: Trading signal in the specified format
 
     Returns:
         A dictionary that contains trade signal information
     """
-
-    # Split the signal by line breaks
-    signal = signal.splitlines()
-    signal = [line.strip() for line in signal]
-
+    
     trade = {}
+    
+    try:
+        # Split the signal by line breaks
+        signal = signal.splitlines()
+        signal = [line.strip() for line in signal]
 
-    # First line should contain symbol and order type (Buy/Sell/Buy Limit/Sell Limit/Buy Stop/Sell Stop)
-    first_line = signal[0].split()
-    trade['Symbol'] = first_line[0].upper()
-    trade['OrderType'] = first_line[1].lower()
+        print("Debug: Split signal lines")
 
-    # Check if the symbol is valid, if not, return an empty dictionary
-    if trade['Symbol'] not in SYMBOLS:
-        return {}
+        # First line should contain symbol and order type (Buy/Sell/Limit/Stop)
+        first_line = signal[0].split()
+        trade['Symbol'] = first_line[0].upper()
+        trade['OrderType'] = first_line[1].lower()
 
-    # For market execution (NOW), set Entry to 'NOW'
-    if 'entry' in signal[1].lower():
-        trade['Entry'] = 'NOW'
-    else:
-        # Parse the entry price
-        entry_line = signal[1].split()
-        trade['Entry'] = float(entry_line[1])
+        print(f"Debug: Symbol: {trade['Symbol']}, OrderType: {trade['OrderType']}")
 
-    # Parse stop loss (SL)
-    sl_line = signal[2].split()
-    trade['StopLoss'] = float(sl_line[1])
+        # Check if the symbol is valid, if not, return an empty dictionary
+        if trade['Symbol'] not in SYMBOLS:
+            raise Exception('Invalid Symbol')
 
-    # Parse take profit (TP) levels
-    trade['TP'] = []
+        # For market execution (Now), set Entry to 'NOW'
+        if 'entry' in signal[1].lower():
+            trade['Entry'] = 'NOW'
+        else:
+            # Parse the entry price
+            entry_line = signal[1].split()
+            trade['Entry'] = float(entry_line[1])
 
-    for i in range(3, len(signal)):
-        if 'tp' in signal[i].lower():
-            tp_line = signal[i].split()
-            trade['TP'].append(float(tp_line[1]))
+        # Parse stop loss (SL)
+        sl_line = signal[2].split()
+        trade['StopLoss'] = float(sl_line[1])
 
-    # Adds risk factor to trade
-    trade['RiskFactor'] = RISK_FACTOR
+        # Parse take profit (TP) levels
+        trade['TP'] = []
+
+        for i in range(3, len(signal)):
+            if 'tp' in signal[i].lower():
+                tp_line = signal[i].split()
+                trade['TP'].append(float(tp_line[1]))
+
+        # Adds risk factor to trade
+        trade['RiskFactor'] = RISK_FACTOR
+
+    except Exception as error:
+        print(f"Error: {str(error)}")
+        return {'error': str(error)}  # Return an error message
 
     return trade
+
 
 
 def GetTradeInformation(update: Update, trade: dict, balance: float) -> None:
